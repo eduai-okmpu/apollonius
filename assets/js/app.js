@@ -34,6 +34,12 @@
     C: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
     compass: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="4.5" r="1.8"/><path d="M11 6.2 5.5 20M13 6.2 18.5 20M7.6 14.5h8.8"/></svg>',
     ruler: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 15.5 15.5 3 21 8.5 8.5 21z"/></svg>',
+    plus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    minus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    target: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke-linecap="round"/></svg>',
+    expand: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>',
+    shrink: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"/></svg>',
+    undo: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v4h4"/><path d="M3.5 8A5 5 0 1 1 5 12"/></svg>',
     back: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
   };
 
@@ -202,12 +208,28 @@
   }
 
   /* ---------- Construction ---------- */
+  let keep = null;          // figure, step and view survive a language switch
+  let fullMode = false, realFs = false;
+  function setFull(on) {
+    fullMode = on;
+    document.body.classList.toggle("full-mode", on);
+    const b = document.getElementById("full");
+    if (b) { b.setAttribute("aria-pressed", String(on)); b.title = t(on ? "fullExit" : "fullEnter"); b.innerHTML = (on ? ICON.shrink : ICON.expand) + `<span>${t(on ? "fullExit" : "fullEnter")}</span>`; }
+    if (on && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().then(() => { realFs = true; }).catch(() => { realFs = false; });
+    }
+    if (!on && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    if (!on) realFs = false;
+    redrawAll();
+  }
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && realFs && fullMode) setFull(false); });
   function viewBuild(v) {
     setStage("build");
     const code = v.id.split("-")[0].toUpperCase();
     const p = PROBLEMS.find((x) => x.code === code);
-    let els = JSON.parse(JSON.stringify(v.els));
-    let step = 0, active = null, result = CONSTRUCT.run(code, els), sig = "";
+    if (!keep || keep.id !== v.id) keep = { id: v.id, els: JSON.parse(JSON.stringify(v.els)), step: 0, view: { cx: RENDER.W / 2, cy: RENDER.H / 2, z: 1 } };
+    let els = keep.els, step = keep.step, active = null, result = CONSTRUCT.run(code, els), sig = "";
+    const vw = keep.view;
 
     view.innerHTML = `
       <section class="wrap">
@@ -223,6 +245,7 @@
         </div>
         <div class="build">
           <aside class="sheet steps-panel">
+            <div class="full-title"><span class="code">${code}</span><b>${tx(v.name)}</b></div>
             <div class="tools" aria-label="${t("tools")}">
               <span class="tool">${ICON.compass}${t("compass")}</span>
               <span class="tool">${ICON.ruler}${t("straightedge")}</span>
@@ -242,8 +265,15 @@
             </div>
             <canvas id="board" aria-label="${tx(v.name)}"></canvas>
             <div class="board-bar">
-              <span>${t("dragHint")}</span>
-              <button type="button" class="btn btn-ghost" id="reset">${t("reset")}</button>
+              <span class="hint">${t("dragHint")}</span>
+              <div class="ctrls">
+                <button type="button" class="ctrl" id="zoom-out" aria-label="${t("zoomOut")}" title="${t("zoomOut")}">${ICON.minus}</button>
+                <span class="mono zoom-val" id="zoom-val"></span>
+                <button type="button" class="ctrl" id="zoom-in" aria-label="${t("zoomIn")}" title="${t("zoomIn")}">${ICON.plus}</button>
+                <button type="button" class="ctrl" id="zoom-reset" aria-label="${t("viewReset")}" title="${t("viewReset")}">${ICON.target}</button>
+                <button type="button" class="btn btn-ghost" id="reset" title="${t("reset")}">${ICON.undo}<span>${t("reset")}</span></button>
+                <button type="button" class="btn" id="full" aria-pressed="false"></button>
+              </div>
             </div>
           </div>
         </div>
@@ -251,7 +281,10 @@
 
     const board = document.getElementById("board");
     const list = document.getElementById("steps");
-    const draw = () => RENDER.drawScene(board, els, { labels: true, handles: true, active, steps: result.steps, step });
+    const draw = () => {
+      RENDER.drawScene(board, els, { labels: true, handles: true, active, steps: result.steps, step, view: vw });
+      document.getElementById("zoom-val").textContent = Math.round(vw.z * 100) + "%";
+    };
 
     function renderList() {
       list.innerHTML = result.steps.map((s, i) => `
@@ -274,6 +307,7 @@
       const nextSig = lang + result.steps.map((s) => s.t.en).join("|");
       if (nextSig !== sig) { sig = nextSig; renderList(); }
       step = Math.min(step, result.steps.length - 1);
+      keep.step = step;
       list.querySelectorAll(".step").forEach((b) => {
         const i = Number(b.dataset.i);
         b.classList.toggle("is-active", i === step);
@@ -290,36 +324,72 @@
     const go = (i) => {
       step = i; sync();
       const btn = document.getElementById("step-" + step);
-      if (btn && window.matchMedia("(min-width: 981px)").matches) btn.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+      if (btn && (fullMode || window.matchMedia("(min-width: 981px)").matches)) btn.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
     };
     document.getElementById("prev").addEventListener("click", () => { if (step > 0) go(step - 1); });
     document.getElementById("next").addEventListener("click", () => { if (step < result.steps.length - 1) go(step + 1); });
-    document.getElementById("reset").addEventListener("click", () => { els = JSON.parse(JSON.stringify(v.els)); recompute(); });
+    document.getElementById("reset").addEventListener("click", () => { els = keep.els = JSON.parse(JSON.stringify(v.els)); recompute(); });
+    const zoomBy = (f, sx, sy) => {
+      const r = board.getBoundingClientRect();
+      if (sx === undefined) { sx = r.left + r.width / 2; sy = r.top + r.height / 2; }
+      const a = RENDER.toWorld(board, sx, sy), z = Math.min(40, Math.max(0.15, vw.z * f));
+      Object.assign(vw, RENDER.anchorView(board, a.x, a.y, sx, sy, z));
+      draw();
+    };
+    document.getElementById("zoom-in").addEventListener("click", () => zoomBy(1.25));
+    document.getElementById("zoom-out").addEventListener("click", () => zoomBy(0.8));
+    document.getElementById("zoom-reset").addEventListener("click", () => { Object.assign(vw, { cx: RENDER.W / 2, cy: RENDER.H / 2, z: 1 }); draw(); });
+    document.getElementById("full").addEventListener("click", () => setFull(!fullMode));
+    setFull(fullMode);
+    board.addEventListener("wheel", (ev) => { ev.preventDefault(); zoomBy(Math.exp(-ev.deltaY * 0.0015), ev.clientX, ev.clientY); }, { passive: false });
     const onKey = (ev) => {
       if (ev.target.closest("input, textarea")) return;
       if (ev.key === "ArrowRight" && step < result.steps.length - 1) go(step + 1);
       if (ev.key === "ArrowLeft" && step > 0) go(step - 1);
+      if (ev.key === "Escape" && fullMode && !document.fullscreenElement) setFull(false);
     };
     document.addEventListener("keydown", onKey);
     onCleanup(() => document.removeEventListener("keydown", onKey));
 
-    /* Dragging */
-    let drag = null, pending = false;
-    const toWorld = (ev) => {
-      const r = board.getBoundingClientRect();
-      return { x: ((ev.clientX - r.left) / r.width) * RENDER.W, y: ((ev.clientY - r.top) / r.height) * RENDER.H };
+    /* Dragging elements, panning the field, pinch zoom */
+    let drag = null, pan = null, pinch = null, pending = false;
+    const pointers = new Map();
+    const tol = () => { const r = RENDER.visible(board); return (14 * (r.x1 - r.x0)) / (board.getBoundingClientRect().width || 1); };
+    const clamp = (q) => { const b = RENDER.visible(board); return { x: Math.min(b.x1 - 1, Math.max(b.x0 + 1, q.x)), y: Math.min(b.y1 - 1, Math.max(b.y0 + 1, q.y)) }; };
+    const schedule = (fn) => { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; fn(); }); } };
+    const startPinch = () => {
+      const [a, b] = [...pointers.values()];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: vw.z, anchor: RENDER.toWorld(board, mx, my) };
+      if (drag) { drag = null; active = null; }
+      pan = null;
     };
-    const tol = () => (14 / board.getBoundingClientRect().width) * RENDER.W;
-    const clamp = (q) => ({ x: Math.min(RENDER.W - 1, Math.max(1, q.x)), y: Math.min(RENDER.H - 1, Math.max(1, q.y)) });
     board.addEventListener("pointerdown", (ev) => {
-      const q = toWorld(ev), h = RENDER.hit(els, q.x, q.y, tol());
-      if (!h) return;
-      drag = { ...h, last: q }; active = h.i;
-      board.setPointerCapture(ev.pointerId); draw();
+      board.setPointerCapture(ev.pointerId);
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pointers.size === 2) { startPinch(); return; }
+      if (pointers.size > 2) return;
+      const q = RENDER.toWorld(board, ev.clientX, ev.clientY), h = RENDER.hit(els, q.x, q.y, tol());
+      if (h) { drag = { ...h, last: q }; active = h.i; draw(); }
+      else { pan = { x: ev.clientX, y: ev.clientY, cx: vw.cx, cy: vw.cy }; board.style.cursor = "grabbing"; }
     });
     board.addEventListener("pointermove", (ev) => {
-      const q = clamp(toWorld(ev));
-      if (!drag) { board.style.cursor = RENDER.hit(els, q.x, q.y, tol()) ? "grab" : "default"; return; }
+      if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pinch && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()];
+        const z = Math.min(40, Math.max(0.15, pinch.z0 * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0));
+        Object.assign(vw, RENDER.anchorView(board, pinch.anchor.x, pinch.anchor.y, (a.x + b.x) / 2, (a.y + b.y) / 2, z));
+        schedule(draw);
+        return;
+      }
+      if (pan) {
+        const r = RENDER.visible(board), k = board.getBoundingClientRect().width / (r.x1 - r.x0);
+        vw.cx = pan.cx - (ev.clientX - pan.x) / k; vw.cy = pan.cy - (ev.clientY - pan.y) / k;
+        schedule(draw);
+        return;
+      }
+      const q = clamp(RENDER.toWorld(board, ev.clientX, ev.clientY));
+      if (!drag) { board.style.cursor = RENDER.hit(els, q.x, q.y, tol()) ? "grab" : "move"; return; }
       board.style.cursor = "grabbing";
       const e = els[drag.i], dx = q.x - drag.last.x, dy = q.y - drag.last.y;
       if (drag.part === "p" || drag.part === "center") { e.x = q.x; e.y = q.y; }
@@ -328,9 +398,15 @@
       else if (drag.part === "line") { e.x1 += dx; e.y1 += dy; e.x2 += dx; e.y2 += dy; }
       else if (drag.part === "rim") { e.r = Math.max(2, GEO.dist(e.x, e.y, q.x, q.y)); }
       drag.last = q;
-      if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; recompute(); }); }
+      schedule(recompute);
     });
-    const end = () => { if (!drag) return; drag = null; active = null; board.style.cursor = "grab"; draw(); };
+    const end = (ev) => {
+      pointers.delete(ev.pointerId);
+      if (pinch && pointers.size < 2) { pinch = null; pan = null; drag = null; return; }
+      pan = null;
+      if (drag) { drag = null; active = null; draw(); }
+      board.style.cursor = "move";
+    };
     board.addEventListener("pointerup", end);
     board.addEventListener("pointercancel", end);
 
@@ -344,6 +420,8 @@
     cleanups.forEach((f) => f()); cleanups = [];
     ro.disconnect();
     const h = (location.hash || "#home").slice(1);
+    if (fullMode && !h.startsWith("build-")) setFull(false);
+    if (!keepScroll) keep = null;
     let m;
     if (h === "home" || h === "" || h === "pick" || h === "problems") viewHome();
     else if ((m = h.match(/^case-([plc]{3})$/)) && CASES[m[1].toUpperCase()]) viewCases(m[1].toUpperCase());

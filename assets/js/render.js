@@ -10,18 +10,44 @@ window.RENDER = (function () {
     return palette;
   }
 
-  /* Prepare a canvas for crisp drawing; returns a context in world units. */
-  function setup(canvas) {
+  /* Prepare a canvas for crisp drawing; returns a context in world units.
+     view = { cx, cy, z }: the world point at the canvas centre and the zoom factor. */
+  const INFO = new WeakMap();
+  let clip = { x: W / 2, y: H / 2, R: 80 };
+  function setup(canvas, view) {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, Math.round(rect.width * dpr)), h = Math.max(1, Math.round(rect.width * 0.7 * dpr));
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round((rect.height || rect.width * 0.7) * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     const ctx = canvas.getContext("2d");
-    const k = w / W;
-    ctx.setTransform(k, 0, 0, k, 0, 0);
-    ctx.clearRect(0, 0, W, H);
+    const v = view || { cx: W / 2, cy: H / 2, z: 1 };
+    const base = Math.min(w / W, h / H), k = base * v.z;
+    const ox = w / 2 - v.cx * k, oy = h / 2 - v.cy * k;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-    return { ctx, k, px: 1 / k * dpr }; // px: one CSS pixel in world units
+    clip = { x: v.cx, y: v.cy, R: Math.hypot(w, h) / 2 / k + 2 };
+    INFO.set(canvas, { k, ox, oy, dpr, w, h, base, rect });
+    return { ctx, k, px: dpr / k }; // px: one CSS pixel in world units
+  }
+  /* Screen (client) coordinates to world coordinates for the last drawn frame. */
+  function toWorld(canvas, clientX, clientY) {
+    const i = INFO.get(canvas), r = canvas.getBoundingClientRect();
+    if (!i) return { x: 0, y: 0 };
+    return { x: ((clientX - r.left) * i.dpr - i.ox) / i.k, y: ((clientY - r.top) * i.dpr - i.oy) / i.k };
+  }
+  /* Visible world rectangle of the last drawn frame. */
+  function visible(canvas) {
+    const i = INFO.get(canvas);
+    if (!i) return { x0: 0, y0: 0, x1: W, y1: H };
+    return { x0: -i.ox / i.k, y0: -i.oy / i.k, x1: (i.w - i.ox) / i.k, y1: (i.h - i.oy) / i.k };
+  }
+  /* View that keeps world point (ax, ay) under client point (sx, sy) at zoom z. */
+  function anchorView(canvas, ax, ay, sx, sy, z) {
+    const i = INFO.get(canvas), r = canvas.getBoundingClientRect(), k = i.base * z;
+    return { z, cx: ax - ((sx - r.left) * i.dpr - i.w / 2) / k, cy: ay - ((sy - r.top) * i.dpr - i.h / 2) / k };
   }
 
   const pal = () => palette || readPalette();
@@ -30,12 +56,33 @@ window.RENDER = (function () {
     ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []); ctx.stroke();
   }
 
+  /* Infinite line, cut to the visible area so dashes stay cheap. */
   function line(ctx, x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len, E = 400;
-    ctx.beginPath(); ctx.moveTo(x1 - ux * E, y1 - uy * E); ctx.lineTo(x2 + ux * E, y2 + uy * E);
+    const ux = dx / len, uy = dy / len;
+    const t = (clip.x - x1) * ux + (clip.y - y1) * uy, fx = x1 + ux * t, fy = y1 + uy * t;
+    const off = Math.hypot(clip.x - fx, clip.y - fy);
+    ctx.beginPath();
+    if (off > clip.R) return;
+    const E = Math.sqrt(clip.R * clip.R - off * off) + 1;
+    ctx.moveTo(fx - ux * E, fy - uy * E); ctx.lineTo(fx + ux * E, fy + uy * E);
   }
-  function circle(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); }
+  /* Circle, drawn only where it crosses the visible area. Huge circles become short polylines. */
+  function circle(ctx, x, y, r) {
+    ctx.beginPath();
+    r = Math.max(0, r);
+    const d = Math.hypot(x - clip.x, y - clip.y), D = clip.R;
+    if (d + r <= D || r <= D) { ctx.arc(x, y, r, 0, Math.PI * 2); return; }
+    if (Math.abs(d - r) >= D) return;
+    const phi = Math.atan2(clip.y - y, clip.x - x);
+    const a = Math.acos(Math.max(-1, Math.min(1, (d * d + r * r - D * D) / (2 * d * r))));
+    if (r < 4000) { ctx.arc(x, y, r, phi - a, phi + a); return; }
+    const n = 48;
+    for (let i = 0; i <= n; i++) {
+      const th = phi - a + (2 * a * i) / n, px = x + r * Math.cos(th), py = y + r * Math.sin(th);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+  }
   function dot(ctx, x, y, r, color) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); }
   function label(ctx, text, x, y, size, color, italic) {
     ctx.font = `${italic ? "italic " : ""}500 ${size}px "Cormorant Garamond", Georgia, serif`;
@@ -101,7 +148,7 @@ window.RENDER = (function () {
 
   function drawScene(canvas, els, o) {
     o = o || {};
-    const { ctx, px } = setup(canvas);
+    const { ctx, px } = setup(canvas, o.view);
     const after = o.steps ? drawItems(ctx, o.steps, o.step || 0, px) : null;
     drawGivens(ctx, els, { px, labels: o.labels, active: o.active, handles: o.handles });
     if (after) after();
@@ -153,5 +200,5 @@ window.RENDER = (function () {
     return best;
   }
 
-  return { W, H, readPalette, drawScene, drawThumb, hero, hit };
+  return { W, H, readPalette, drawScene, drawThumb, hero, hit, toWorld, visible, anchorView };
 })();
