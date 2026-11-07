@@ -27,9 +27,9 @@
   const CASES = {
     PPP: [
       V("ppp-general", 1, "Бір түзудің бойында жатпайтын үш нүкте", "Three points not on one line",
-        [P(28, 46), P(52, 18), P(74, 50)], { steps: "ppp" }),
+        [P(28, 46), P(52, 18), P(74, 50)]),
       V("ppp-collinear", 0, "Бір түзудің бойында жатқан үш нүкте", "Three points on one line",
-        [P(20, 52), P(48, 37), P(80, 21)], { steps: "ppp" })
+        [P(20, 52), P(50, 36), P(80, 20)])
     ],
     PPL: [
       V("ppl-same-side", 2, "Екі нүкте түзудің бір жағында", "Both points on one side of the line",
@@ -75,7 +75,7 @@
       V("plc-general", 4, "Түзу шеңберді қимайды, нүкте сыртта", "The line misses the circle, point outside",
         [P(18, 16), H(60), C(55, 30, 14)], { upTo: true }),
       V("plc-point-on-circle", 2, "Нүкте шеңбердің бойында", "The point lies on the circle",
-        [P(55, 16), H(60), C(55, 30, 14)]),
+        [P(63.4, 18.8), H(60), C(55, 30, 14)]),
       V("plc-point-on-line", 2, "Нүкте түзудің бойында", "The point lies on the line",
         [P(22, 60), H(60), C(55, 30, 14)]),
       V("plc-line-cuts", 2, "Түзу шеңберді қиып өтеді", "The line cuts the circle",
@@ -115,23 +115,6 @@
     ]
   };
 
-  /* Written construction steps. Each step lists what the drawing shows at that point;
-     the drawing itself lives in render.js under the same key. */
-  const STEPS = {
-    ppp: [
-      { kz: "Берілген A, B және C нүктелерін белгілеңіз.",
-        en: "Mark the given points A, B and C." },
-      { kz: "AB кесіндісінің орта перпендикулярын салыңыз. Циркульді AB-ның жартысынан үлкен етіп ашып, A және B нүктелерінен доғалар сызыңыз. Доғалардың екі қиылысу нүктесін сызғышпен қосыңыз.",
-        en: "Draw the perpendicular bisector of AB. Open the compass wider than half of AB and draw arcs from A and from B. Join the two crossings of the arcs with the straightedge." },
-      { kz: "Дәл осылай BC кесіндісінің орта перпендикулярын салыңыз.",
-        en: "Do the same for BC to get its perpendicular bisector." },
-      { kz: "Екі перпендикуляр O нүктесінде қиылысады. O нүктесі A, B және C нүктелерінен бірдей қашықтықта жатыр. Егер нүктелер бір түзудің бойында болса, перпендикулярлар параллель және шешім жоқ.",
-        en: "The two bisectors meet at O, which is equally far from A, B and C. If the points lie on one line, the bisectors are parallel and there is no solution." },
-      { kz: "Циркуль ұшын O нүктесіне қойып, A нүктесіне дейін ашыңыз да, шеңбер сызыңыз. Ол үш нүктенің бәрі арқылы өтеді.",
-        en: "Put the compass point on O, open it to A and draw the circle. It passes through all three points." }
-    ]
-  };
-
   const byId = {};
   Object.values(CASES).forEach((list) => list.forEach((v) => { byId[v.id] = v; }));
 
@@ -139,5 +122,5 @@
   const ORDER = { P: 0, L: 1, C: 2 };
   const canonical = (letters) => letters.slice().sort((a, b) => ORDER[a] - ORDER[b]).join("");
 
-  window.APOLLO = { PROBLEMS, CASES, STEPS, byId, canonical };
+  window.APOLLO = { PROBLEMS, CASES, byId, canonical };
 })();

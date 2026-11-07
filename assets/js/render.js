@@ -46,72 +46,65 @@ window.RENDER = (function () {
   /* Draw the given elements. opts: { px, labels, active (index), handles } */
   function drawGivens(ctx, els, opts) {
     const c = pal(), px = opts.px;
+    const nm = window.CONSTRUCT ? CONSTRUCT.names(els) : { P: ["A", "B", "C"], L: ["l₁", "l₂", "l₃"], C: ["ω₁", "ω₂", "ω₃"] };
     let np = 0, nl = 0, nc = 0;
     els.forEach((e, i) => {
       const hot = opts.active === i;
       const col = hot ? c.marker : c.ink;
       if (e.t === "L") {
         line(ctx, e.x1, e.y1, e.x2, e.y2); stroke(ctx, col, 1.6 * px);
-        nl++;
         if (opts.handles) { dot(ctx, e.x1, e.y1, 3.2 * px, col); dot(ctx, e.x2, e.y2, 3.2 * px, col); }
-        if (opts.labels) label(ctx, "l" + sub(nl), e.x2 + 1.2, e.y2 - 1.2, 3.6, c.soft, true);
+        if (opts.labels) label(ctx, nm.L[nl], e.x2 + 1.2, e.y2 - 1.2, 4, c.soft, true);
+        nl++;
       } else if (e.t === "C") {
         circle(ctx, e.x, e.y, e.r); stroke(ctx, col, 1.6 * px);
-        nc++;
         if (opts.handles) { dot(ctx, e.x, e.y, 2.6 * px, col); dot(ctx, e.x + e.r, e.y, 3.2 * px, col); }
-        if (opts.labels) label(ctx, "ω" + sub(nc), e.x + e.r * 0.72 + 0.8, e.y - e.r * 0.72 - 0.8, 3.6, c.soft, true);
+        if (opts.labels) label(ctx, nm.C[nc], e.x + e.r * 0.72 + 0.8, e.y - e.r * 0.72 - 0.8, 4, c.soft, true);
+        nc++;
       }
     });
     els.forEach((e, i) => {
       if (e.t !== "P") return;
       const hot = opts.active === i;
       dot(ctx, e.x, e.y, (opts.handles ? 4 : 3) * px, hot ? c.marker : c.ink);
-      if (opts.labels) label(ctx, "ABC"[np] || "P", e.x + 1.6, e.y - 1.6, 4.4, hot ? c.marker : c.ink, true);
+      if (opts.labels) label(ctx, nm.P[np], e.x + 1.6, e.y - 1.6, 4.4, hot ? c.marker : c.ink, true);
       np++;
     });
   }
   const sub = (n) => "₀₁₂₃₄₅₆₇₈₉"[n] || n;
 
-  /* Construction drawings keyed by STEPS id. step: 0-based index of the current step. */
-  const CONSTRUCTIONS = {
-    ppp(ctx, els, step, px) {
-      const c = pal();
-      const [A, B, Cc] = els.filter((e) => e.t === "P");
-      const tone = (s) => (s === step ? c.accent : c.pencil);
-      const bis = (P1, P2, s) => {
-        const b = GEO.bisector(P1, P2);
-        ctx.beginPath(); ctx.moveTo(P1.x, P1.y); ctx.lineTo(P2.x, P2.y); stroke(ctx, tone(s), 1 * px);
-        b.pts.forEach((q) => {
-          [P1, P2].forEach((O) => {
-            const ang = Math.atan2(q.y - O.y, q.x - O.x);
-            ctx.beginPath(); ctx.arc(O.x, O.y, b.r, ang - 0.22, ang + 0.22); stroke(ctx, tone(s), 1 * px);
-          });
-        });
-        if (b.pts.length === 2) { line(ctx, b.pts[0].x, b.pts[0].y, b.pts[1].x, b.pts[1].y); stroke(ctx, tone(s), 1 * px, [4 * px, 3 * px]); }
-        return b.pts;
-      };
-      let b1, b2;
-      if (step >= 1) b1 = bis(A, B, 1);
-      if (step >= 2) b2 = bis(B, Cc, 2);
-      if (step >= 3 && b1 && b2 && b1.length === 2 && b2.length === 2) {
-        const O = GEO.lineLine(b1[0], b1[1], b2[0], b2[1]);
-        if (O && Math.abs(O.x) < 1e4) {
-          if (step >= 4) {
-            circle(ctx, O.x, O.y, GEO.dist(O.x, O.y, A.x, A.y)); stroke(ctx, c.accent, 2.2 * px);
-          }
-          ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(A.x, A.y); stroke(ctx, step === 4 ? c.accent : c.pencil, 1 * px, [1.5 * px, 2.5 * px]);
-          dot(ctx, O.x, O.y, 3.2 * px, c.accent);
-          label(ctx, "O", O.x + 1.6, O.y + 4.4, 4.4, c.accent, true);
+  /* Draw the construction items of steps 0..step. Earlier steps in pencil, the current one in ink. */
+  function drawItems(ctx, steps, step, px) {
+    const c = pal(), labels = [];
+    const sols = [];
+    steps.slice(0, step + 1).forEach((st, i) => {
+      const cur = i === step, col = cur ? c.accent : c.pencil, w = (cur ? 1.3 : 1) * px;
+      st.items.forEach((it) => {
+        if (it.k === "line") { line(ctx, it.a.x, it.a.y, it.b.x, it.b.y); stroke(ctx, col, w, [4 * px, 3 * px]); }
+        else if (it.k === "seg") { ctx.beginPath(); ctx.moveTo(it.a.x, it.a.y); ctx.lineTo(it.b.x, it.b.y); stroke(ctx, col, w); }
+        else if (it.k === "circ") { circle(ctx, it.c.x, it.c.y, it.r); stroke(ctx, col, w, [3 * px, 2.5 * px]); }
+        else if (it.k === "arc") {
+          const ang = Math.atan2(it.at.y - it.c.y, it.at.x - it.c.x), span = Math.min(0.35, 4 / Math.max(it.r, 1));
+          ctx.beginPath(); ctx.arc(it.c.x, it.c.y, it.r, ang - span, ang + span); stroke(ctx, col, w);
         }
-      }
-    }
-  };
+        else if (it.k === "sol") sols.push({ it, cur });
+        else if (it.k === "pt") labels.push({ it, cur });
+      });
+    });
+    sols.forEach(({ it, cur }) => { circle(ctx, it.c.x, it.c.y, it.r); stroke(ctx, c.accent, (cur ? 2.6 : 2) * px); });
+    return () => labels.forEach(({ it, cur }) => {
+      const col = cur ? c.accent : c.soft;
+      dot(ctx, it.p.x, it.p.y, 2.4 * px, col);
+      if (it.label) label(ctx, it.label, it.p.x + 1.4, it.p.y + 4.6, 4, col, true);
+    });
+  }
 
   function drawScene(canvas, els, o) {
     o = o || {};
     const { ctx, px } = setup(canvas);
-    if (o.construction && CONSTRUCTIONS[o.construction]) CONSTRUCTIONS[o.construction](ctx, els, o.step || 0, px);
+    const after = o.steps ? drawItems(ctx, o.steps, o.step || 0, px) : null;
     drawGivens(ctx, els, { px, labels: o.labels, active: o.active, handles: o.handles });
+    if (after) after();
   }
 
   function drawThumb(canvas, els) {

@@ -1,6 +1,6 @@
 /* Views and routing. Routes: #home, #case-ppl, #build-ppl-same-side */
 (function () {
-  const { PROBLEMS, CASES, STEPS, byId, canonical } = window.APOLLO;
+  const { PROBLEMS, CASES, byId, canonical } = window.APOLLO;
   const view = document.getElementById("view");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -206,11 +206,8 @@
     setStage("build");
     const code = v.id.split("-")[0].toUpperCase();
     const p = PROBLEMS.find((x) => x.code === code);
-    const written = v.steps ? STEPS[v.steps] : null;
-    const steps = written || [{ kz: I18N.kz.draftStep, en: I18N.en.draftStep }];
     let els = JSON.parse(JSON.stringify(v.els));
-    let step = written ? 0 : 0;
-    let active = null;
+    let step = 0, active = null, result = CONSTRUCT.run(code, els), sig = "";
 
     view.innerHTML = `
       <section class="wrap">
@@ -222,7 +219,6 @@
             <span><i class="swatch"></i>${t("legendGiven")}</span>
             <span><i class="swatch pencil"></i>${t("legendPencil")}</span>
             <span><i class="swatch answer"></i>${t("legendAnswer")}</span>
-            <span class="count${v.n === 0 ? " is-zero" : ""}">${solText(v)}</span>
           </div>
         </div>
         <div class="build">
@@ -232,10 +228,7 @@
               <span class="tool">${ICON.ruler}${t("straightedge")}</span>
             </div>
             <h2 class="eyebrow">${t("stepsTitle")}</h2>
-            <ol class="steps" id="steps">
-              ${steps.map((s, i) => `<li><button type="button" class="step" id="step-${i}" data-i="${i}"><span class="n">${i + 1}</span><span>${tx(s)}</span></button></li>`).join("")}
-            </ol>
-            ${written ? "" : `<p class="draft"><b>${t("draftLabel")}</b> ${t("draftText")}</p>`}
+            <ol class="steps" id="steps"></ol>
             <div class="step-nav">
               <button type="button" class="btn btn-ghost" id="prev">${t("prev")}</button>
               <span class="mono" id="step-of"></span>
@@ -243,6 +236,10 @@
             </div>
           </aside>
           <div class="sheet board">
+            <div class="status" aria-live="polite">
+              <span class="status-case"><span class="eyebrow">${t("liveCase")}</span><b id="live-case"></b></span>
+              <span class="count" id="live-count"></span>
+            </div>
             <canvas id="board" aria-label="${tx(v.name)}"></canvas>
             <div class="board-bar">
               <span>${t("dragHint")}</span>
@@ -253,26 +250,61 @@
       </section>`;
 
     const board = document.getElementById("board");
-    const draw = () => RENDER.drawScene(board, els, { labels: true, handles: true, active, construction: written ? v.steps : null, step });
-    const sync = () => {
-      view.querySelectorAll(".step").forEach((b) => {
+    const list = document.getElementById("steps");
+    const draw = () => RENDER.drawScene(board, els, { labels: true, handles: true, active, steps: result.steps, step });
+
+    function renderList() {
+      list.innerHTML = result.steps.map((s, i) => `
+        <li class="step-row"><button type="button" class="step" id="step-${i}" data-i="${i}">
+          <span class="n">${i + 1}</span>
+          <span class="step-text">${tx(s.t)}</span>
+        </button>${s.ref ? `<a class="step-ref" href="#case-${s.ref.toLowerCase()}">${t("openProblem")} ${s.ref} →</a>` : ""}</li>`).join("");
+      list.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => { step = Number(b.dataset.i); sync(); }));
+    }
+    function info() {
+      const live = result.caseId ? byId[result.caseId] : null;
+      const el = document.getElementById("live-case");
+      el.textContent = live ? tx(live.name) : t("liveSpecial");
+      el.classList.toggle("is-changed", !!live && live.id !== v.id);
+      const k = result.sols.length, c = document.getElementById("live-count");
+      c.textContent = k === 0 ? t("sol0") : t("found", { n: k });
+      c.classList.toggle("is-zero", k === 0);
+    }
+    function sync() {
+      const nextSig = lang + result.steps.map((s) => s.t.en).join("|");
+      if (nextSig !== sig) { sig = nextSig; renderList(); }
+      step = Math.min(step, result.steps.length - 1);
+      list.querySelectorAll(".step").forEach((b) => {
         const i = Number(b.dataset.i);
         b.classList.toggle("is-active", i === step);
         b.classList.toggle("is-past", i < step);
         if (i === step) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
       });
-      document.getElementById("step-of").textContent = t("stepOf", { i: step + 1, n: steps.length });
+      document.getElementById("step-of").textContent = t("stepOf", { i: step + 1, n: result.steps.length });
       document.getElementById("prev").disabled = step === 0;
-      document.getElementById("next").disabled = step === steps.length - 1;
+      document.getElementById("next").disabled = step === result.steps.length - 1;
+      info();
       draw();
+    }
+    const recompute = () => { result = CONSTRUCT.run(code, els); sync(); };
+    const go = (i) => {
+      step = i; sync();
+      const btn = document.getElementById("step-" + step);
+      if (btn && window.matchMedia("(min-width: 981px)").matches) btn.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
     };
-    view.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => { step = Number(b.dataset.i); sync(); }));
-    document.getElementById("prev").addEventListener("click", () => { if (step > 0) { step--; sync(); } });
-    document.getElementById("next").addEventListener("click", () => { if (step < steps.length - 1) { step++; sync(); } });
-    document.getElementById("reset").addEventListener("click", () => { els = JSON.parse(JSON.stringify(v.els)); draw(); });
+    document.getElementById("prev").addEventListener("click", () => { if (step > 0) go(step - 1); });
+    document.getElementById("next").addEventListener("click", () => { if (step < result.steps.length - 1) go(step + 1); });
+    document.getElementById("reset").addEventListener("click", () => { els = JSON.parse(JSON.stringify(v.els)); recompute(); });
+    const onKey = (ev) => {
+      if (ev.target.closest("input, textarea")) return;
+      if (ev.key === "ArrowRight" && step < result.steps.length - 1) go(step + 1);
+      if (ev.key === "ArrowLeft" && step > 0) go(step - 1);
+    };
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
 
     /* Dragging */
-    let drag = null;
+    let drag = null, pending = false;
     const toWorld = (ev) => {
       const r = board.getBoundingClientRect();
       return { x: ((ev.clientX - r.left) / r.width) * RENDER.W, y: ((ev.clientY - r.top) / r.height) * RENDER.H };
@@ -290,13 +322,13 @@
       if (!drag) { board.style.cursor = RENDER.hit(els, q.x, q.y, tol()) ? "grab" : "default"; return; }
       board.style.cursor = "grabbing";
       const e = els[drag.i], dx = q.x - drag.last.x, dy = q.y - drag.last.y;
-      if (drag.part === "p") { e.x = q.x; e.y = q.y; }
-      else if (drag.part === "a") { e.x1 = q.x; e.y1 = q.y; }
-      else if (drag.part === "b") { e.x2 = q.x; e.y2 = q.y; }
+      if (drag.part === "p" || drag.part === "center") { e.x = q.x; e.y = q.y; }
+      else if (drag.part === "a") { if (GEO.dist(q.x, q.y, e.x2, e.y2) > 3) { e.x1 = q.x; e.y1 = q.y; } }
+      else if (drag.part === "b") { if (GEO.dist(q.x, q.y, e.x1, e.y1) > 3) { e.x2 = q.x; e.y2 = q.y; } }
       else if (drag.part === "line") { e.x1 += dx; e.y1 += dy; e.x2 += dx; e.y2 += dy; }
-      else if (drag.part === "center") { e.x = q.x; e.y = q.y; }
       else if (drag.part === "rim") { e.r = Math.max(2, GEO.dist(e.x, e.y, q.x, q.y)); }
-      drag.last = q; draw();
+      drag.last = q;
+      if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; recompute(); }); }
     });
     const end = () => { if (!drag) return; drag = null; active = null; board.style.cursor = "grab"; draw(); };
     board.addEventListener("pointerup", end);

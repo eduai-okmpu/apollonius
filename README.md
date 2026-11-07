@@ -9,9 +9,24 @@ draw a circle tangent to three given elements, each a point, a line or a circle.
 2. **Cases** (`#case-plc`): the configurations of the chosen problem, with the number of solutions for each.
 3. **Construct** (`#build-<case-id>`): step-by-step construction with compass and straightedge. The given elements can be dragged.
 
-## Status
+## How the constructions work
 
-Skeleton. The construction for PPP is complete as a sample; other cases show a draft placeholder.
+`assets/js/construct.js` builds every problem with classical compass-and-straightedge methods and records each step with its drawing:
+
+| Problem | Method |
+| --- | --- |
+| PPP | Perpendicular bisectors meet at the circumcentre |
+| PPL | Power of a point: MT² = MA·MB gives the tangency points on the line |
+| PLL | Angle bisector plus homothety from the vertex |
+| LLL | Inner and outer angle bisectors (incircle and excircles) |
+| PPC | Helper circle and radical centre, then tangents from it |
+| PLC | Ends of the diameter perpendicular to the line give a second point, reducing to PPL |
+| PCC | Centres of similarity give a second point, reducing to PPC |
+| LLC | Shrink the circle to its centre and shift the lines, reducing to PLL |
+| LCC | Shrink the smaller circle, reducing to PLC |
+| CCC | Shrink the smallest circle, reducing to PCC |
+
+Every answer is checked for tangency against the original elements. As the user drags, the steps, the detected case and the number of solutions update live.
 
 ## Run
 
