@@ -14,11 +14,11 @@ window.RENDER = (function () {
      view = { cx, cy, z }: the world point at the canvas centre and the zoom factor. */
   const INFO = new WeakMap();
   let clip = { x: W / 2, y: H / 2, R: 80 };
-  function setup(canvas, view) {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, Math.round(rect.width * dpr));
-    const h = Math.max(1, Math.round((rect.height || rect.width * 0.7) * dpr));
+  function setup(canvas, view, fixed) {
+    const rect = fixed ? { width: canvas.width, height: canvas.height } : canvas.getBoundingClientRect();
+    const dpr = fixed ? fixed.dpr : window.devicePixelRatio || 1;
+    const w = fixed ? canvas.width : Math.max(1, Math.round(rect.width * dpr));
+    const h = fixed ? canvas.height : Math.max(1, Math.round((rect.height || rect.width * 0.7) * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     const ctx = canvas.getContext("2d");
     const v = view || { cx: W / 2, cy: H / 2, z: 1 };
@@ -139,10 +139,10 @@ window.RENDER = (function () {
       });
     });
     sols.forEach(({ it, cur }) => { circle(ctx, it.c.x, it.c.y, it.r); stroke(ctx, c.accent, (cur ? 2.6 : 2) * px); });
-    return () => labels.forEach(({ it, cur }) => {
+    return (showLabels) => labels.forEach(({ it, cur }) => {
       const col = cur ? c.accent : c.soft;
       dot(ctx, it.p.x, it.p.y, 2.4 * px, col);
-      if (it.label) label(ctx, it.label, it.p.x + 1.4, it.p.y + 4.6, 4, col, true);
+      if (it.label && showLabels !== false) label(ctx, it.label, it.p.x + 1.4, it.p.y + 4.6, 4, col, true);
     });
   }
 
@@ -152,6 +152,36 @@ window.RENDER = (function () {
     const after = o.steps ? drawItems(ctx, o.steps, o.step || 0, px) : null;
     drawGivens(ctx, els, { px, labels: o.labels, active: o.active, handles: o.handles });
     if (after) after();
+  }
+
+  /* Figure for print: fixed pixel size, its own palette, optional paper background and grid. */
+  const PRINT = {
+    color: { ink: "#1b2430", soft: "#4a5563", pencil: "#8e99a6", accent: "#2c41c4", marker: "#b06f12", paper: "#ffffff", rule: "#c8d0d9", grid: "#e6eaef" },
+    bw: { ink: "#000000", soft: "#333333", pencil: "#8a8a8a", accent: "#000000", marker: "#000000", paper: "#ffffff", rule: "#999999", grid: "#e8e8e8" }
+  };
+  function drawFigure(canvas, els, o) {
+    const saved = palette;
+    palette = PRINT[o.scheme] || PRINT.color;
+    try {
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = palette.paper; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const { px } = setup(canvas, o.view, { dpr: o.dpr || 2 });
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = palette.paper; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      if (o.grid) {
+        const b = visible(canvas);
+        ctx.lineWidth = px * 0.8; ctx.strokeStyle = palette.grid; ctx.setLineDash([]);
+        ctx.beginPath();
+        for (let x = Math.ceil(b.x0 / 5) * 5; x <= b.x1; x += 5) { ctx.moveTo(x, b.y0); ctx.lineTo(x, b.y1); }
+        for (let y = Math.ceil(b.y0 / 5) * 5; y <= b.y1; y += 5) { ctx.moveTo(b.x0, y); ctx.lineTo(b.x1, y); }
+        ctx.stroke();
+      }
+      const after = o.steps ? drawItems(ctx, o.steps, o.step || 0, px) : null;
+      drawGivens(ctx, els, { px, labels: o.labels, handles: false });
+      if (after) after(o.labels);
+    } finally { palette = saved; }
   }
 
   function drawThumb(canvas, els) {
@@ -200,5 +230,5 @@ window.RENDER = (function () {
     return best;
   }
 
-  return { W, H, readPalette, drawScene, drawThumb, hero, hit, toWorld, visible, anchorView };
+  return { W, H, readPalette, drawScene, drawThumb, drawFigure, hero, hit, toWorld, visible, anchorView };
 })();

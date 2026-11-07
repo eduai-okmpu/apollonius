@@ -39,6 +39,7 @@
     target: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke-linecap="round"/></svg>',
     expand: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>',
     shrink: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"/></svg>',
+    doc: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13M6 8.5h5M6 11h5"/></svg>',
     undo: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v4h4"/><path d="M3.5 8A5 5 0 1 1 5 12"/></svg>',
     back: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
   };
@@ -271,6 +272,7 @@
                 <span class="mono zoom-val" id="zoom-val"></span>
                 <button type="button" class="ctrl" id="zoom-in" aria-label="${t("zoomIn")}" title="${t("zoomIn")}">${ICON.plus}</button>
                 <button type="button" class="ctrl" id="zoom-reset" aria-label="${t("viewReset")}" title="${t("viewReset")}">${ICON.target}</button>
+                <button type="button" class="btn btn-ghost" id="pdf-open" title="${t("pdf")}">${ICON.doc}<span>PDF</span></button>
                 <button type="button" class="btn btn-ghost" id="reset" title="${t("reset")}">${ICON.undo}<span>${t("reset")}</span></button>
                 <button type="button" class="btn" id="full" aria-pressed="false"></button>
               </div>
@@ -340,10 +342,14 @@
     document.getElementById("zoom-out").addEventListener("click", () => zoomBy(0.8));
     document.getElementById("zoom-reset").addEventListener("click", () => { Object.assign(vw, { cx: RENDER.W / 2, cy: RENDER.H / 2, z: 1 }); draw(); });
     document.getElementById("full").addEventListener("click", () => setFull(!fullMode));
+    document.getElementById("pdf-open").addEventListener("click", () => {
+      const r = board.getBoundingClientRect();
+      REPORT.open({ code, problem: p, variant: v, els: JSON.parse(JSON.stringify(els)), view: Object.assign({}, vw), result, uiLang: lang, screenAspect: r.height / (r.width || 1) });
+    });
     setFull(fullMode);
     board.addEventListener("wheel", (ev) => { ev.preventDefault(); zoomBy(Math.exp(-ev.deltaY * 0.0015), ev.clientX, ev.clientY); }, { passive: false });
     const onKey = (ev) => {
-      if (ev.target.closest("input, textarea")) return;
+      if (ev.target.closest("input, textarea, select") || (window.REPORT && REPORT.isOpen())) return;
       if (ev.key === "ArrowRight" && step < result.steps.length - 1) go(step + 1);
       if (ev.key === "ArrowLeft" && step > 0) go(step - 1);
       if (ev.key === "Escape" && fullMode && !document.fullscreenElement) setFull(false);
@@ -419,6 +425,7 @@
   function route(keepScroll) {
     cleanups.forEach((f) => f()); cleanups = [];
     ro.disconnect();
+    if (window.REPORT) REPORT.close();
     const h = (location.hash || "#home").slice(1);
     if (fullMode && !h.startsWith("build-")) setFull(false);
     if (!keepScroll) keep = null;

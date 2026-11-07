@@ -36,6 +36,12 @@ Static files, no build step. Open `index.html` in a browser or serve the folder:
 python3 -m http.server 8000
 ```
 
+## PDF report
+
+The **PDF** button on the construction page opens a preview of the document for the current figure. Next to the preview are 33 settings: author, group, institution, supervisor, city, date, document language, paper size, margins (including GOST 30/10/20/20 mm), font size, line spacing, sections, figures, colour and more. The preview and the file come from the same layout, so the download matches what you see. Settings are remembered in the browser.
+
+The PDF uses Literata (SIL Open Font License), embedded so Kazakh letters render everywhere. jsPDF is loaded from cdnjs when the dialog first opens.
+
 ## Structure
 
 - `index.html` page shell, header, language toggle
@@ -44,4 +50,6 @@ python3 -m http.server 8000
 - `assets/js/data.js` problems, cases, sample geometry and construction steps
 - `assets/js/geometry.js` geometry helpers
 - `assets/js/render.js` canvas drawing, construction drawings, hit testing
-- `assets/js/app.js` views, routing, dragging
+- `assets/js/app.js` views, routing, dragging, pan/zoom, full screen
+- `assets/js/report.js` PDF dialog: settings, page layout, preview, export
+- `assets/js/fonts-literata.js` embedded font for the PDF (loaded on demand)
